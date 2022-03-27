@@ -9,6 +9,7 @@ import pdfminer.layout as layout
 import os
 import re
 from functools import cmp_to_key
+import bisect
 
 class my_box:
     def __init__(self,x0,x1,y0,y1):
@@ -99,7 +100,7 @@ else:
         # 接受该页面的LTPage对象
         LTlayout=device.get_result()
 
-        bx_list=[x for x in LTlayout if isinstance(x, LTTextBoxHorizontal) and len(x)>0]#获得所有文本框
+        bx_list=[x for x in LTlayout if isinstance(x, LTTextBoxHorizontal) and len(x)>0]#获得所有文本box
         if len(bx_list)==0:
             continue
 
@@ -127,7 +128,7 @@ else:
         page_list.append(bx_list)
         pdf_pages.append(bx_list)
 
-    print(x_dict)
+    # print(x_dict)
     for page in pdf_pages:
         for bx in page:
             if x_dict[(int(bx.x0),int(bx.x1))]/tol_size>0.3:
@@ -162,6 +163,39 @@ else:
                 if line.get_text().lower().find("references")!=-1:
                     lines=[]
                 first_line_in_page=False
+
+    start_pos=[]
+    end_pos=[]
     for line in lines:
-        print(line.get_text())
-        
+        # print(line.get_text())
+        if int(line.x1) not in end_pos:
+            start_pos.append(int(line.x0))
+            end_pos.append(int(line.x1))
+    start_pos.sort()
+    end_pos.sort()
+
+    ind1=bisect.bisect_left(start_pos,end_pos[0])
+    ind2=bisect.bisect_left(end_pos,start_pos[ind1])-1
+    print(end_pos[-1])
+    print(end_pos[ind2])
+    print(end_pos[ind2+1])
+    
+    tmp=[]
+
+    references_list=[]
+    def end_with_period(s):
+        tmp=s.rstrip()
+        if s[-1]!='.':
+            return False
+        return s[-3:-1].isalnum()
+    for line in lines:
+        tmp.append(line)
+        if (int(line.x1)!=end_pos[-1] and int(line.x1)!=end_pos[ind2]) or end_with_period(line.get_text()):
+            print(line.x1)
+            
+            for i in range(1,len(tmp)):
+                tmp[0].merge(tmp[i])
+            references_list.append(tmp[0])
+            tmp=[]
+    for x in references_list:
+        print(x.get_text())
