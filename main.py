@@ -7,6 +7,7 @@ from pdfminer.pdfinterp import PDFTextExtractionNotAllowed
 
 import os
 import re
+from functools import cmp_to_key
 os.chdir(r'./PDF_data')
 fp = open('Liu_Invertible_Denoising_Network_A_Light_Solution_for_Real_Noise_Removal_CVPR_2021_paper.pdf', 'rb')
 
@@ -35,16 +36,27 @@ else:
     # 创建一个PDF解释器对象
     interpreter=PDFPageInterpreter(rsrcmgr,device)
     # 处理每一页
-    References_page=-1
-    page_list=[]#缓存每页的布局，第二次遍历时就不需要再解析
+    page_list=[]#储存references以后的页面
     for i,page in enumerate(document.get_pages()):
         interpreter.process_page(page)
         # 接受该页面的LTPage对象
         layout=device.get_result()
-        page_list.append(layout)
-        print(i)
-        for x in layout:
-            if isinstance(x, LTTextBoxHorizontal) and x.get_text().lower().find("references")!=-1:
-                References_page=i
+
+        tmp=[x for x in layout if isinstance(x, LTTextBoxHorizontal) and len(x)>0]
+        for x in tmp:
+            if x.get_text().lower().find("references")!=-1:
+                page_list=[]
                 break
-    print(References_page)
+        page_list.append(tmp)
+    def sort_box(x,y):
+        if(x.x1<y.x0):
+            return -1
+        elif (x.x0>y.x1):
+            return 1
+        else:
+            return y.y0-x.y0
+    for x in page_list:
+        x.sort(key=cmp_to_key(sort_box))
+        for y in x:
+            print(y.get_text())
+        
