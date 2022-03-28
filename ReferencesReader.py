@@ -20,6 +20,9 @@ class my_box:
         self.y0=min(self.y0,obj.y0)
         self.y1=max(self.y1,obj.y1)
     @classmethod
+    def y_nest(cls,obj1,obj2):
+        return (obj1.y0+0.001>=obj2.y0 and obj1.y1-0.001<=obj2.y1) or (obj1.y0-0.001<=obj2.y0 and obj1.y1+0.001>=obj2.y1)
+    @classmethod
     def cast(cls,obj):
         return cls(obj.x0,obj.x1,obj.y0,obj.y1)
 
@@ -28,41 +31,59 @@ class text_box(my_box):
     def __init__(self,x0,x1,y0,y1,text):
         my_box.__init__(self,x0,x1,y0,y1)
         self.text=text.rstrip()
+    def mergeable(self,obj):
+        return my_box.y_nest(self,obj)
     def merge(self,obj):
         my_box.merge(self,obj)
-        self.text=self.text.rstrip()+" "+obj.text.rstrip()
+        self.text=self.text.rstrip()+" "+obj.text.rstrip() if self.x0<obj.x0 else obj.text.rstrip()+" "+self.text.rstrip()
     def get_text(self):
         return self.text
     @classmethod
     def cast(cls,obj):
         return cls(obj.x0,obj.x1,obj.y0,obj.y1,obj.get_text())
 
-class line_box(my_box):
-    line=[]
+class line_box(text_box):
+    _line=[]
     def __init__(self,x0,x1,y0,y1,lst):
-        my_box.__init__(self,x0,x1,y0,y1)
-        self.line=[(x.y0,x.y1) for x in lst]
+        self._line=[text_box.cast(x) for x in lst]
+        text_box.__init__(self,x0,x1,y0,y1,"\n".join([x.get_text() for x in self._line]))
     def __len__(self):
-        return len(self.line)
+        return len(self._line)
     def __iter__(self):
-        return iter(self.line)
-    def can_merge(self,obj):
-        x,y=self,obj if len(self)<len(obj) else obj,self
+        return iter(self._line)
+    def __getitem__(self,index):
+        return self._line[index]
+    def mergeable(self,obj):
+        if len(self)<len(obj):
+            x=self
+            y=obj
+        else :
+            y=self
+            x=obj
         if len(x)==0:
-            return True
-        if not(x.y0+0.001>=y.y0 and x.y1-0.001<=y.y1):
-            return False
+            return 0
+        if not my_box.y_nest(self,obj):
+            return -1
         start=0
         for i in range(0,len(y)):
-            if y[i][0]<=x[0][0]+0.001 and y[i][1]<=x[0][1]-0.001:
+            if x[0].mergeable(y[i]):
                 start=i
                 break
         if start+len(x)>len(y):
-            return False
+            return -1
         for i in range(1,len(x)):
-            if not(y[i+start][0]<=x[i][0]+0.001 and y[i+start][1]<=x[i][1]-0.001):
-                return False
-        return True
+            if not y[i+start].mergeable(x[i]):
+                return -1
+        return start
+    def merge(self,obj,idx):
+        if len(self)<len(obj):
+            x=self
+            self=line_box.cast(obj)
+        else:
+            x=obj
+        for i in range(1,len(x)):
+            self[i+idx].merge(x[i])
+        my_box.merge(self,obj)
     @classmethod
     def cast(cls,obj):
         return cls(obj.x0,obj.x1,obj.y0,obj.y1,obj)
@@ -148,12 +169,36 @@ class ReferencesReader:
     
     def find_references(self):
         for page in self._pdf_pages:
-            tmp=[bx for bx in page if bx.y1>=self.min_y and bx.y0<=self.max_y]
+            tmp=[line_box.cast(bx) for bx in page if bx.y1>=self.min_y and bx.y0<=self.max_y]
             for bx in page:
                 if bx.get_text().strip().lower().find("references")==0:
                     self._references_page=[]
                     break
             self._references_page.append(tmp)
+    
+
+    def merge_box(self,page):
+        if len(page)==0:
+            return
+        tmp=sorted(page,key=lambda x:x.y0)
+        page=[]
+        for x in tmp:
+            ch=False
+            if len(page)>0:
+                t1=self._x_dict[(int(x.x0),int(x.x1))]
+                t2=self._x_dict[(int(page[-1].x0),int(page[-1].x1))]
+                if max(t1,t2)<self._x_dict[(int(min(x.x0,page[-1].x0)),int(max(x.x1,page[-1].x1)))]:
+                    i=page[-1].mergeable(x)
+                    if i!=-1:
+                        page[-1].merge(x,i)
+                        print("merging.............")
+                        ch=True
+            if ch==False:
+                page.append(x)
+
+
+        
+
     
     def split_references(self):
         lines=[]
@@ -167,6 +212,7 @@ class ReferencesReader:
                 return y.y0-x.y0#右下角是原点，右向是x轴，向上是y轴
 
         for page in self._references_page:
+            self.merge_box(page)
             first_line_in_page=True
             page.sort(key=cmp_to_key(sort_box))
             for box in page:
@@ -175,7 +221,7 @@ class ReferencesReader:
                     if len(lines)==0:
                         lines.append(tmp)
                     else:
-                        if lines[-1].y0-0.001<=line.y0 and lines[-1].y1+0.001>=line.y1:#pdfminer 有时会把空格当作换行，在这里修正
+                        if lines[-1].mergeable(tmp):#pdfminer 有时会把空格当作换行，在这里修正
                             lines[-1].merge(tmp)              
                         else:
                             lines.append(tmp)
