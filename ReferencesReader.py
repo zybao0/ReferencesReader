@@ -20,7 +20,7 @@ class my_box:
         self.y0=min(self.y0,obj.y0)
         self.y1=max(self.y1,obj.y1)
     @classmethod
-    def y_nest(cls,obj1,obj2):
+    def y_nest(cls,obj1,obj2):#判断两个box在y方向是否形成嵌套关系
         return (obj1.y0+0.001>=obj2.y0 and obj1.y1-0.001<=obj2.y1) or (obj1.y0-0.001<=obj2.y0 and obj1.y1+0.001>=obj2.y1)
     @classmethod
     def cast(cls,obj):
@@ -31,8 +31,9 @@ class text_box(my_box):
     def __init__(self,x0,x1,y0,y1,text):
         my_box.__init__(self,x0,x1,y0,y1)
         self.text=text.rstrip()
-    def mergeable(self,obj):
-        return my_box.y_nest(self,obj)
+    @classmethod
+    def mergeable(cls,obj1,obj2):
+        return my_box.y_nest(obj1,obj2)
     def merge(self,obj):
         my_box.merge(self,obj)
         self.text=self.text.rstrip()+" "+obj.text.rstrip() if self.x0<obj.x0 else obj.text.rstrip()+" "+self.text.rstrip()
@@ -42,48 +43,50 @@ class text_box(my_box):
     def cast(cls,obj):
         return cls(obj.x0,obj.x1,obj.y0,obj.y1,obj.get_text())
 
-class line_box(text_box):
-    _line=[]
+class line_box(my_box):
+    _lines=[]
     def __init__(self,x0,x1,y0,y1,lst):
-        self._line=[text_box.cast(x) for x in lst]
-        text_box.__init__(self,x0,x1,y0,y1,"\n".join([x.get_text() for x in self._line]))
+        self._lines=[text_box.cast(x) for x in lst]
+        my_box.__init__(self,x0,x1,y0,y1)
     def __len__(self):
-        return len(self._line)
+        return len(self._lines)
     def __iter__(self):
-        return iter(self._line)
+        return iter(self._lines)
     def __getitem__(self,index):
-        return self._line[index]
-    def mergeable(self,obj):
-        if len(self)<len(obj):
-            x=self
-            y=obj
-        else :
-            y=self
-            x=obj
-        if len(x)==0:
-            return 0
-        if not my_box.y_nest(self,obj):
-            return -1
-        start=0
-        for i in range(0,len(y)):
-            if x[0].mergeable(y[i]):
+        return self._lines[index]
+    @classmethod
+    def mergeable(cls,obj1,obj2):#判断两个box是否可以合并（是否是行在高度方向上重叠）
+        if len(obj1)>len(obj2):
+            obj1,obj2=obj2,obj1
+        if len(obj1)==0:
+            return True
+        if not my_box.y_nest(obj1,obj2):
+            return False
+        start=-1
+        for i in range(0,len(obj2)):
+            if text_box.mergeable(obj1[0],obj2[i]):
                 start=i
                 break
-        if start+len(x)>len(y):
-            return -1
-        for i in range(1,len(x)):
-            if not y[i+start].mergeable(x[i]):
-                return -1
-        return start
-    def merge(self,obj,idx):
-        if len(self)<len(obj):
-            x=self
-            self=line_box.cast(obj)
-        else:
-            x=obj
-        for i in range(1,len(x)):
-            self[i+idx].merge(x[i])
+        if start==-1 or start+len(obj1)>len(obj2):
+            return False
+        for i in range(1,len(obj1)):
+            if not text_box.mergeable(obj1[i],obj2[i+start]):
+                return False
+        return True
+    def merge(self,obj):#将两个box合并
+        self._lines+=[x for x in obj]
         my_box.merge(self,obj)
+    def sort(self):#对行按照y1从大到小排序（list里靠前的在pdf的上方（y1值较大））
+        self._lines.sort(key=lambda x:x.y1,reverse=True)
+    def merge_lines(self):#把一个box内的相同高度的行合并
+        self.sort()
+        tmp=[]
+        for x in self._lines:
+            if len(tmp)>0 and text_box.mergeable(tmp[-1],x):#pdfminer 有时会把空格当作换行，在这里修正
+                tmp[-1].merge(x)
+            else:
+                tmp.append(x)
+        self._lines=tmp
     @classmethod
     def cast(cls,obj):
         return cls(obj.x0,obj.x1,obj.y0,obj.y1,obj)
@@ -180,26 +183,21 @@ class ReferencesReader:
     def merge_box(self,page):
         if len(page)==0:
             return
-        tmp=sorted(page,key=lambda x:x.y0)
-        page=[]
-        for x in tmp:
-            ch=False
-            if len(page)>0:
+        page.sort(key=lambda x:x.y0)
+        tmp=[]
+        for x in page:
+            if len(tmp)>0:
                 t1=self._x_dict[(int(x.x0),int(x.x1))]
-                t2=self._x_dict[(int(page[-1].x0),int(page[-1].x1))]
-                if max(t1,t2)<self._x_dict[(int(min(x.x0,page[-1].x0)),int(max(x.x1,page[-1].x1)))]:
-                    i=page[-1].mergeable(x)
-                    if i!=-1:
-                        page[-1].merge(x,i)
-                        print("merging.............")
-                        ch=True
-            if ch==False:
-                page.append(x)
+                t2=self._x_dict[(int(tmp[-1].x0),int(tmp[-1].x1))]
+                t3=self._x_dict[(int(min(x.x0,tmp[-1].x0)),int(max(x.x1,tmp[-1].x1)))]
+                if max(t1,t2)<t3:#如果两个box合并后更优（即合并后box左右的左右边界在全文中出现的次数更多[参考页眉部分]），则合并两个box
+                    if line_box.mergeable(tmp[-1],x):
+                        tmp[-1].merge(x)
+                        continue
+            tmp.append(x)
+        return tmp
 
 
-        
-
-    
     def split_references(self):
         lines=[]
         
@@ -212,24 +210,15 @@ class ReferencesReader:
                 return y.y0-x.y0#右下角是原点，右向是x轴，向上是y轴
 
         for page in self._references_page:
-            self.merge_box(page)
-            first_line_in_page=True
+            page=self.merge_box(page)
             page.sort(key=cmp_to_key(sort_box))
+            
             for box in page:
+                box.merge_lines()
                 for line in box:
-                    tmp=text_box.cast(line)
-                    if len(lines)==0:
-                        lines.append(tmp)
-                    else:
-                        if lines[-1].mergeable(tmp):#pdfminer 有时会把空格当作换行，在这里修正
-                            lines[-1].merge(tmp)              
-                        else:
-                            lines.append(tmp)
+                    lines.append(line)
                     if line.get_text().strip().lower().find("references")==0:
                         lines=[]
-                    first_line_in_page=False
-
-        
         tmp=[]
         references_list=[]
         def end_with_period(s):
