@@ -27,36 +27,20 @@ class text_box(my_box):
     text=""
     def __init__(self,x0,x1,y0,y1,text):
         my_box.__init__(self,x0,x1,y0,y1)
-        self.text=text
+        self.text=text.rstrip()
     def merge(self,obj):
         my_box.merge(self,obj)
-        self.text=self.text.rstrip('\n')+" "+obj.text
+        self.text=self.text.rstrip()+" "+obj.text.rstrip()
     def get_text(self):
         return self.text
     @classmethod
     def cast(cls,obj):
         return cls(obj.x0,obj.x1,obj.y0,obj.y1,obj.get_text())
-
-class box_line(my_box):
-    def __init__(self,x0,x1,y0,y1,hight):
-        my_box.__init__(self,x0,x1,y0,y1)
-        self.line_hight=hight
-    def merge(self,obj):
-        my_box.merge(self,obj)
-        self.line_hight=min(self.line_hight,obj.line_hight)
-    def hight(self):
-        return self.line_hight
-    @classmethod
-    def cast(cls,obj):
-        hight=obj.y1-obj.y0
-        for x in obj:
-            hight=min(hight,x.y1-x.y0)
-        return cls(obj.x0,obj.x1,obj.y0,obj.y1,hight)
     
 
 
 os.chdir(r'./PDF_data')
-fp = open('Liu_Invertible_Denoising_Network_A_Light_Solution_for_Real_Noise_Removal_CVPR_2021_paper.pdf', 'rb')
+fp = open('[10] [HPG 2017] Improved Two-Level BVHs using Partial Re-Braiding.pdf', 'rb')
 
 #来创建一个pdf文档分析器
 parser = PDFParser(fp)
@@ -104,16 +88,6 @@ else:
         if len(bx_list)==0:
             continue
 
-        # page_box.sort(key=lambda x:x.y0)
-        # page_box_merge=[]
-        # for bx in page_box:
-        #     if len(page_box_merge)==0 or bx.y0>page_box_merge[-1].y1:
-        #         page_box_merge.append(bx)
-        #     else:
-        #         page_box_merge[-1].merge(bx)
-        # for bx in page_box_merge:
-        #     print(bx.y0,bx.y1,bx.hight())
-
         for bx in bx_list:
             size=(bx.x1-bx.x0)*(bx.y1-bx.y0)
             tol_size+=size
@@ -122,16 +96,26 @@ else:
             else:
                 x_dict[(int(bx.x0),int(bx.x1))]=size
 
-            if bx.get_text().lower().find("references")!=-1:
+            if bx.get_text().lower().find("references")==0:
                 page_list=[]
 
         page_list.append(bx_list)
         pdf_pages.append(bx_list)
+    
+    # print(page_list)
 
-    # print(x_dict)
+    rk=sorted([x/tol_size for x in x_dict.values()],reverse=True)
+    now_size=0
+    for x in rk:
+        now_size+=x
+        threshold_size=x
+        if now_size>0.5:
+            break
+
+
     for page in pdf_pages:
         for bx in page:
-            if x_dict[(int(bx.x0),int(bx.x1))]/tol_size>0.3:
+            if x_dict[(int(bx.x0),int(bx.x1))]/tol_size>threshold_size:
                 min_y=min(min_y,bx.y0)
                 max_y=max(max_y,bx.y1)
     print(min_y,max_y)
@@ -148,6 +132,7 @@ else:
         first_line_in_page=True
         page.sort(key=cmp_to_key(sort_box))
         for box in page:
+            #print(box)
             if box.y0<min_y or box.y1>max_y:
                 continue
             for line in box:
@@ -157,42 +142,25 @@ else:
                 else:
                     if lines[-1].y0-0.001<=line.y0 and lines[-1].y1+0.001>=line.y1:#pdfminer 有时会把空格当作换行，在这里修正
                         lines[-1].merge(tmp)
+                        
                     else:
                         # if not (first_line_in_page!=True and "".join(tmp.get_text().split()).isdigit() and lines[-1].y1-tmp.y0>2*(tmp.y1-tmp.y0)):#这种情况很可能是页数，这样的话就跳过这以后
                             lines.append(tmp)
-                if line.get_text().lower().find("references")!=-1:
+                if line.get_text().lower().find("references")==0:
                     lines=[]
                 first_line_in_page=False
 
-    start_pos=[]
-    end_pos=[]
-    for line in lines:
-        # print(line.get_text())
-        if int(line.x1) not in end_pos:
-            start_pos.append(int(line.x0))
-            end_pos.append(int(line.x1))
-    start_pos.sort()
-    end_pos.sort()
-
-    ind1=bisect.bisect_left(start_pos,end_pos[0])
-    ind2=bisect.bisect_left(end_pos,start_pos[ind1])-1
-    print(end_pos[-1])
-    print(end_pos[ind2])
-    print(end_pos[ind2+1])
     
     tmp=[]
-
     references_list=[]
     def end_with_period(s):
         tmp=s.rstrip()
         if s[-1]!='.':
             return False
         return s[-3:-1].isalnum()
-    for line in lines:
+    for i,line in enumerate(lines):
         tmp.append(line)
-        if (int(line.x1)!=end_pos[-1] and int(line.x1)!=end_pos[ind2]) or end_with_period(line.get_text()):
-            print(line.x1)
-            
+        if end_with_period(line.get_text()) or i==len(lines)-1:
             for i in range(1,len(tmp)):
                 tmp[0].merge(tmp[i])
             references_list.append(tmp[0])
