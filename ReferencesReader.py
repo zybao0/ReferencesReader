@@ -34,9 +34,24 @@ class text_box(my_box):
     @classmethod
     def mergeable(cls,obj1,obj2):
         return my_box.y_nest(obj1,obj2)
-    def merge(self,obj):
+    @classmethod
+    def _join(cls,obj1,obj2):
+        return obj1.get_text().rstrip()+" "+obj2.get_text().rstrip()
+    def merge(self,obj):#直接将第二个文本添加在第一个文本后
+        self.text=text_box._join(self,obj)
         my_box.merge(self,obj)
-        self.text=self.text.rstrip()+" "+obj.text.rstrip() if self.x0<obj.x0 else obj.text.rstrip()+" "+self.text.rstrip()
+    def merge_by_pos(self,obj):#通过两个文本的相对位置合并文本
+        if self.y0+0.001>=obj.y1:
+            self.text=text_box._join(self,obj)
+        elif self.y1<=obj.y0+0.001:
+            self.text=text_box._join(obj,self)
+        elif self.x0<=obj.x0+0.001:
+            self.text=text_box._join(self,obj)
+        elif self.x0+0.001>=obj.x0:
+            self.text=text_box._join(obj,self)
+        else:
+            self.text=text_box._join(self,obj)
+        my_box.merge(self,obj)
     def get_text(self):
         return self.text
     @classmethod
@@ -83,7 +98,7 @@ class line_box(my_box):
         tmp=[]
         for x in self._lines:
             if len(tmp)>0 and text_box.mergeable(tmp[-1],x):#pdfminer 有时会把空格当作换行，在这里修正
-                tmp[-1].merge(x)
+                tmp[-1].merge_by_pos(x)
             else:
                 tmp.append(x)
         self._lines=tmp
@@ -221,11 +236,13 @@ class ReferencesReader:
                         lines=[]
         tmp=[]
         references_list=[]
+
         def end_with_period(s):
             tmp=s.rstrip()
             if s[-1]!='.':
                 return False
             return s[-3:-1].isalnum()
+
         for i,line in enumerate(lines):
             tmp.append(line)
             if end_with_period(line.get_text()) or i==len(lines)-1:
