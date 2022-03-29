@@ -10,6 +10,7 @@ import re
 from functools import cmp_to_key
 import bisect
 from collections import defaultdict
+import string
 
 class my_box:
     def __init__(self,x0,x1,y0,y1):
@@ -237,18 +238,35 @@ class ReferencesReader:
         tmp=[]
         references_list=[]
 
-        def end_with_period(s):
+        def period_prize(s):
             tmp=s.rstrip()
-            if s[-1]!='.':
-                return False
-            return s[-3:-1].isalnum()
+            if len(tmp)==0 or tmp[-1]!='.':
+                return -1#如果不是以'.'给予惩罚
+            cnt=0
+            for x in range(2,min(len(tmp),4)):#'.'前面的非空字符越多，奖励越多（防止人名中的无效'.'）
+                if tmp[-x] in string.whitespace:
+                    break
+                cnt+=1
+            return max(cnt-1,0)
+            
 
         for i,line in enumerate(lines):
             tmp.append(line)
-            if end_with_period(line.get_text()) or i==len(lines)-1:
-                for i in range(1,len(tmp)):
-                    tmp[0].merge(tmp[i])
-                references_list.append(tmp[0])
-                tmp=[]
-        for x in references_list:
-            print(x.get_text())
+            value=0
+            if(i!=len(lines)-1):#如果是全文最后一行就没有讨论的必要了
+                if i!=0 and line.y0<=lines[i-1].y0+0.001:#如果本行和上一行在同一页同一列
+                    if lines[i-1].x1-line.x1>0:#如果下面那行的右端在上面那行的右端的左边，给予奖励
+                        value+=int((lines[i-1].x1-line.x1)/(lines[i-1].x1-lines[i-1].x0)*4)
+                    if line.y0+0.001>=lines[i+1].y0:
+                        value+=int((1-(lines[i-1].y0-line.y1)/(line.y0-lines[i+1].y1))*4)#如果与上一行的间距大于与下一行的间距，给予奖励，否则给予惩罚
+                if line.y0+0.001>=lines[i+1].y0 and lines[i+1].x0<tmp[0].x1 and lines[i+1].x1>tmp[0].x0 and lines[i+1].x0>tmp[0].x0:#如果下一行与本reference的第一行在同一列
+                    value-=int((lines[i+1].x0-tmp[0].x0)/min(tmp[0].x1-tmp[0].x0,lines[i+1].x1-lines[i+1].x0)*max(len(tmp[0].get_text()),len(lines[i+1].get_text())))#如果下一行的左端与上一条reference的左端不同，给予惩罚
+                value+=period_prize(line.get_text())
+                if value<=0:
+                    continue
+            for i in range(1,len(tmp)):
+                tmp[0].merge(tmp[i])
+            references_list.append(tmp[0])
+            tmp=[]
+        for i,x in enumerate(references_list):
+            print(i,":",x.get_text())
