@@ -14,14 +14,17 @@ import string
 
 class my_box:
     def __init__(self,x0,x1,y0,y1):
-        self.x0,self.x1,self.y0,self.y1=x0,x1,y0,y1
+        self.set_size(x0,x1,y0,y1)
 
     def merge(self,obj):
         self.x0=min(self.x0,obj.x0)
         self.x1=max(self.x1,obj.x1)
         self.y0=min(self.y0,obj.y0)
         self.y1=max(self.y1,obj.y1)
-
+    
+    def set_size(self,x0,x1,y0,y1):
+        self.x0,self.x1,self.y0,self.y1=x0,x1,y0,y1
+        
     @classmethod
     def y_nest(cls,obj1,obj2):#判断两个box在y方向是否形成嵌套关系
         return (obj1.y0+0.001>=obj2.y0 and obj1.y1-0.001<=obj2.y1) or (obj1.y0-0.001<=obj2.y0 and obj1.y1+0.001>=obj2.y1)
@@ -125,7 +128,8 @@ class ReferencesReader:
     #若该面积占所有box总面积的大部分，则认为左边界为x0，右边界为x1的box为正文box
     #取所有正文box的y值上界和y值下界得到正文部分的上界和下界
     #若y值超过上界或下界的box认为属于页眉或页脚内容
-    _x_dict=defaultdict(float)     #key:box的左右边界,value:box面积
+    _x_dict=defaultdict(float)#key:box的左右边界,value:box面积
+    _most_common_bound=[]#全文中最有可能出现的左右边界对  
     tol_size=0    #box总面积
     min_y=0xEAB0  #y值下界
     max_y=-0xEAB0 #y值上界
@@ -191,17 +195,19 @@ class ReferencesReader:
                 self.tol_size+=size
                 self._x_dict[(int(bx.x0),int(bx.x1))]+=size
 
-        rk=sorted([x/self.tol_size for x in self._x_dict.values()],reverse=True)
+        self._most_common_bound=sorted(self._x_dict.items(),key=lambda x:x[1],reverse=True)
+        
         now_size=0
-        for x in rk:
-            now_size+=x
-            threshold_size=x
-            if now_size>0.5:
+        for i,x in enumerate(self._most_common_bound):#获得占比最高的若干个边界值，使得以这些边界值为左右边界的box占到全文的绝大部分
+            now_size+=x[1]
+            threshold_size=x[1]
+            if now_size*2>self.tol_size and (i==len(self._most_common_bound)-1 or x[1]>self._most_common_bound[i+1][1]):
+                self._most_common_bound=self._most_common_bound[0:i+1]
                 break
 
         for page in self._pdf_pages:
             for bx in page:
-                if self._x_dict[(int(bx.x0),int(bx.x1))]/self.tol_size>threshold_size:
+                if self._x_dict[(int(bx.x0),int(bx.x1))]>=threshold_size:
                     self.min_y=min(self.min_y,bx.y0)
                     self.max_y=max(self.max_y,bx.y1)
         
@@ -209,7 +215,7 @@ class ReferencesReader:
             self.min_y=-0xEAB0
         if self.max_y==-0xEAB0:
             self.max_y=0xEAB0 
-    
+
 
     def _find_references(self):
         for page in self._pdf_pages:
@@ -219,7 +225,7 @@ class ReferencesReader:
                     self._references_page=[]
                     break
             self._references_page.append(tmp)
-    
+
 
     def _merge_box(self,page):
         page.sort(key=lambda x:x.y0)
@@ -253,7 +259,14 @@ class ReferencesReader:
 
         for page in self._references_page:
             page=self._merge_box(page)
-            page.sort(key=cmp_to_key(sort_box))
+
+            for box in page:#使用拓展盒子边界机制，将不是常见的box左右边界拓展为常见的box左右边界（即本来宽度不到一整行的box变为一整行），防止孤立的box对接下来的排序造成影响（产考论文[ACM 2008] Real-Time, All-Frequency Shadows in Dynamic Scenes，references上方的公式对排序的影响）
+                for bound in self._most_common_bound:
+                    if bound[0][0]-3<box.x0 and bound[0][1]+3>box.x1:
+                        box.set_size(bound[0][0],bound[0][1],box.y0,box.y1)
+                        break
+
+            page.sort(key=cmp_to_key(sort_box))#将box按照阅读顺序排序
             
             for box in page:
                 box.merge_lines()
@@ -288,7 +301,7 @@ class ReferencesReader:
                         value+=int((lines[i+1].x1-line.x1)/(lines[i+1].x1-lines[i+1].x0)*4)
                     if lines[i+1].x0<tmp[0].x1 and lines[i+1].x1>tmp[0].x0 and lines[i+1].x0>tmp[0].x0:#如果下一行与本reference的第一行在同一列(即没有发生错位)，且
                         value-=int((lines[i+1].x0-tmp[0].x0)/min(tmp[0].x1-tmp[0].x0,lines[i+1].x1-lines[i+1].x0)*max(len(tmp[0].get_text()),len(lines[i+1].get_text())))#如果下一行的左端与上一条reference的左端不同，给予惩罚
-                value+=period_prize(line.get_text())
+                value+=period_prize(line.get_text())g
                 if value<=0:
                     continue
             for i in range(1,len(tmp)):
