@@ -53,10 +53,6 @@ class text_box(my_box):
         self.text=text_box._join(self,obj)
         my_box.merge(self,obj)
 
-    def merge_by_pos(self,obj):#通过两个文本的相对位置合并文本
-        self.text=text_box._join(self,obj) if self.x0<obj.x0 else text_box._join(obj,self)
-        my_box.merge(self,obj)
-
     def get_text(self):
         return self.text
 
@@ -105,15 +101,19 @@ class line_box(my_box):
     def sort(self):#对行按照y1从大到小排序（list里靠前的在pdf的上方（y1值较大））
         self._lines.sort(key=lambda x:x.y1,reverse=True)
 
-    def merge_lines(self):#把一个box内的相同高度的行合并
+    def merge_lines(self):#pdfminer 有时会把空格当作换行，在这里修正,把一个box内的相同高度的行合并
         self.sort()
         tmp=[]
-        for x in self._lines:
-            if len(tmp)>0 and text_box.mergeable(tmp[-1],x):#pdfminer 有时会把空格当作换行，在这里修正
-                tmp[-1].merge_by_pos(x)
-            else:
-                tmp.append(x)
-        self._lines=tmp
+        merged_lines=[]
+        for i,x in enumerate(self._lines):
+            tmp.append(x)
+            if i==len(self._lines)-1 or not text_box.mergeable(tmp[0],self._lines[i+1]):
+                tmp.sort(key=lambda x:x.x0)
+                for i in range(1,len(tmp)):
+                    tmp[0].merge(tmp[i])
+                merged_lines.append(tmp[0])
+                tmp=[]
+        self._lines=merged_lines
 
     @classmethod
     def cast(cls,obj):
@@ -335,9 +335,6 @@ class ReferencesReader:
                     line_space=sorted(line_space)[1:len(line_space)-1]#剔除最大和最小的两个数
                     split_pos,avg_x,sig_x,avg_y,sig_y=cal_min_s2(line_space)#将列表一分为二，x表示同一个reference之间两行的间隔，y表示两个reference之间的间隔（估计）
                     line_space_prize=-1 if min(sig_x,sig_y)<=1e9 else 0 if avg_y-avg_x<3*max(sig_x,sig_y) else 1
-                    print(split_pos)
-                    print(avg_x,sig_x,line_space[0:split_pos])
-                    print(avg_y,sig_y,line_space[split_pos:])
     
             value=0
             if(i!=len(line_list)-1):#如果是全文最后一行就没有讨论的必要了
