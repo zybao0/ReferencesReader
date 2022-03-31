@@ -11,6 +11,7 @@ from functools import cmp_to_key
 import bisect
 from collections import defaultdict
 import string
+import math
 
 class my_box:
     def __init__(self,x0,x1,y0,y1):
@@ -247,7 +248,7 @@ class ReferencesReader:
 
 
     def _split_references(self):
-        lines=[]
+        line_list=[]
         
         def sort_box(x,y):
             if(x.x1<y.x0):
@@ -255,9 +256,10 @@ class ReferencesReader:
             elif (x.x0>y.x1):
                 return 1
             else:
-                return y.y0-x.y0#右下角是原点，右向是x轴，向上是y轴
+                return y.y1-x.y1#右下角是原点，右向是x轴，向上是y轴
 
-        for page in self._references_page:
+        for i,page in enumerate(self._references_page):
+            column=0
             page=self._merge_box(page)
 
             for box in page:#使用拓展盒子边界机制，将不是常见的box左右边界拓展为常见的box左右边界（即本来宽度不到一整行的box变为一整行），防止孤立的box对接下来的排序造成影响（产考论文[ACM 2008] Real-Time, All-Frequency Shadows in Dynamic Scenes，references上方的公式对排序的影响）
@@ -268,12 +270,14 @@ class ReferencesReader:
 
             page.sort(key=cmp_to_key(sort_box))#将box按照阅读顺序排序
             
-            for box in page:
+            for j,box in enumerate(page):
                 box.merge_lines()
+                if j>0 and page[j-1].x1<box.x0:#如果两个box发生了错位，认为另起了一列
+                    column+=1
                 for line in box:
-                    lines.append(line)
+                    line_list.append((line,(i,column)))
                     if line.get_text().strip().lower().find("references")==0:
-                        lines=[]
+                        line_list=[]
         
         def period_prize(s):
             tmp=s.rstrip()
@@ -285,26 +289,73 @@ class ReferencesReader:
                     break
                 cnt+=1
             return max(cnt-1,0)
+        
+        def cal_s2(sum_x,sum_x2,n):
+            if n==0:
+                return 0
+            tmp=sum_x/n
+            return sum_x2/n-tmp*tmp
+
+        def cal_min_s2(l):#将有序列表一分为二使得两部分的方差和最小
+            sum_x,sum_x2=0,0
+            sum_y,sum_y2=sum(l),sum([x*x for x in l])
+            split_pos=0#方差和最小时对应的切割位置(x:l[0:split_pos],y:l[split_pos:])
+            min_sum_x,min_sum_y=0,sum_y2#方差和最小时两部分的和
+            min_x_s2,min_y_s2=0,cal_s2(sum_y,sum_y2,len(l))#方差和最小时两部分的方差
+            for j,x in enumerate(l):#将l[j]加入左边后计算方差和
+                tmp=l[j]*l[j]
+                sum_x+=l[j]
+                sum_x2+=tmp
+                sum_y-=l[j]
+                sum_y2-=tmp
+                x_s2=cal_s2(sum_x,sum_x2,j+1)
+                y_s2=cal_s2(sum_y,sum_y2,len(l)-j-1)
+                if x_s2+y_s2<min_x_s2+min_y_s2:
+                    min_sum_x,min_x_s2,min_sum_y,min_y_s2,split_pos=sum_x,x_s2,sum_y,y_s2,j+1
+            if abs(min_x_s2)<1e-9:#防止因为精度损失导致s2小于0造成不能开根
+                min_x_s2=0
+            if abs(min_y_s2)<1e-9:
+                min_y_s2=0
+            return split_pos,min_sum_x/split_pos,math.sqrt(min_x_s2),min_sum_y/(len(l)-split_pos),math.sqrt(min_y_s2)#返回分割位置，x部分的平均数，x部分的标准差，y部分的平均数，y部分的表准差
+
             
         tmp=[]
-        for i,line in enumerate(lines):
+        references_end=False
+        for i,line in enumerate(line_list):
             tmp.append(line)
+            if i==0 or line_list[i-1][1]!=line[1]:#如果另起了一列，则统计该列文本的行间隔
+                line_space=[]
+                for j in range(i+1,len(line_list)):
+                    if line_list[j][1]!=line_list[j-1][1]:
+                        break
+                    line_space.append(line_list[j-1][0].y0-line_list[j][0].y1)
+                if len(line_space)<6:#样本太小，不具有统计学意义
+                    line_space_prize=-1#不对行间隔的差异给予奖励
+                else:
+                    line_space=sorted(line_space)[1:len(line_space)-1]#剔除最大和最小的两个数
+                    split_pos,avg_x,sig_x,avg_y,sig_y=cal_min_s2(line_space)#将列表一分为二，x表示同一个reference之间两行的间隔，y表示两个reference之间的间隔（估计）
+                    line_space_prize=-1 if min(sig_x,sig_y)<=1e9 else 0 if avg_y-avg_x<3*max(sig_x,sig_y) else 1
+                    print(split_pos)
+                    print(avg_x,sig_x,line_space[0:split_pos])
+                    print(avg_y,sig_y,line_space[split_pos:])
+    
             value=0
-            if(i!=len(lines)-1):#如果是全文最后一行就没有讨论的必要了
-                if i!=0 and line.y0<=lines[i-1].y0:#如果本行和上一行在同一页同一列
-                    if lines[i-1].x1>line.x1:#如果本行的右端在上面那行的右端的左边，给予奖励
-                        value+=int((lines[i-1].x1-line.x1)/(lines[i-1].x1-lines[i-1].x0)*4)
-                    if line.y0>=lines[i+1].y0:
-                        value+=int((1-(lines[i-1].y0-line.y1)/(line.y0-lines[i+1].y1))*4)#如果与上一行的间距大于与下一行的间距，给予奖励，否则给予惩罚
-                if line.y0>=lines[i+1].y0:#如果本行和下一行在同一页同一列
-                    if lines[i+1].x1>line.x1:#如果本行的右端在下面那行的右端的左边，给予奖励
-                        value+=int((lines[i+1].x1-line.x1)/(lines[i+1].x1-lines[i+1].x0)*4)
-                    if lines[i+1].x0<tmp[0].x1 and lines[i+1].x1>tmp[0].x0 and lines[i+1].x0>tmp[0].x0:#如果下一行与本reference的第一行在同一列(即没有发生错位)，且
-                        value-=int((lines[i+1].x0-tmp[0].x0)/min(tmp[0].x1-tmp[0].x0,lines[i+1].x1-lines[i+1].x0)*max(len(tmp[0].get_text()),len(lines[i+1].get_text())))#如果下一行的左端与上一条reference的左端不同，给予惩罚
-                value+=period_prize(line.get_text())g
-                if value<=0:
+            if(i!=len(line_list)-1):#如果是全文最后一行就没有讨论的必要了
+                if i!=0 and line_list[i-1][1]==line[1]:#如果本行和上一行在同一页同一列
+                    value+=3 if line_list[i-1][0].x1>line[0].x1 and int(len(line_list[i-1][0].get_text())*(line_list[i-1][0].x1-line[0].x1)/(line_list[i-1][0].x1-line_list[i-1][0].x0))>2 else 0#如果本行的右端在上面那行的右端的左边，给予奖励
+                if line_list[i+1][1]==line[1]:#如果本行和下一行在同一页同一列
+                    if line_space_prize==1:
+                        value+=5 if abs(line[0].y0-line_list[i+1][0].y1-avg_x)/sig_x>abs(line[0].y0-line_list[i+1][0].y1-avg_y)/sig_y else -5#如果它跟下一行的间隔更加接近avg_y（两个reference之间的间隔），则给予奖励，否则给予惩罚
+                    value+= 3 if line_list[i+1][0].x1>line[0].x1 and int(len(line_list[i+1][0].get_text())*(line_list[i+1][0].x1-line[0].x1)/(line_list[i+1][0].x1-line_list[i+1][0].x0))>2 else 0#如果本行的右端在下面那行的右端的左边，给予奖励
+                    value-=10 if line_list[i+1][1]==tmp[0][1] and int(len(tmp[0][0].get_text())*(line_list[i+1][0].x0-tmp[0][0].x0)/(tmp[0][0].x1-tmp[0][0].x0))>0 else 0#如果下一行与本reference的第一行在同一列(即没有发生错位)，且如果下一行的左端与上一条reference的左端不同，给予惩罚
+                    if line_space_prize>=0 and abs(line[0].y0-line_list[i+1][0].y1-avg_y)/sig_y>=5:
+                        references_end=True
+                value+=period_prize(line[0].get_text())
+                if value<=0 and references_end==False:
                     continue
             for i in range(1,len(tmp)):
-                tmp[0].merge(tmp[i])
-            self._references_list.append(tmp[0].get_text())
+                tmp[0][0].merge(tmp[i][0])
+            self._references_list.append(tmp[0][0].get_text())
             tmp=[]
+            if references_end==True:
+                break
