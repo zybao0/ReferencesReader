@@ -37,7 +37,7 @@ class ReferencesReader:
         self._extract_text(pdf_path,pdf_name)
         self._get_body()
         self._find_references()
-        self._split_references()
+        self._merge_references()
         self._beautify_references()
 
 
@@ -155,9 +155,7 @@ class ReferencesReader:
                         box.set_size(bound[0][0],bound[0][1],box.y0,box.y1)
                         break
 
-
-
-    def _split_references(self):
+    def _split_references(self):#split boxes into lines_list
         line_list=[]
 
         for i,page in enumerate(self._references_page):
@@ -174,6 +172,10 @@ class ReferencesReader:
                     line_list.append((line,(i,column)))
                     if line.get_text().strip().lower().find("references")==0:
                         line_list=[]
+        return line_list
+
+    def _merge_references(self):
+        line_list=self._split_references()
         
         sum_line_space,sum_line_space2,num_line_space=0,0,0#统计所有的行间距，用于判断references是否达到结尾
         tmp=[]
