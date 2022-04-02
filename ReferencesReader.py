@@ -39,7 +39,7 @@ class text_box(my_box):
     text=""
     def __init__(self,x0,x1,y0,y1,text):
         my_box.__init__(self,x0,x1,y0,y1)
-        self.text=text.rstrip()
+        self.text=text.strip()
 
     @classmethod
     def mergeable(cls,obj1,obj2):
@@ -47,7 +47,7 @@ class text_box(my_box):
 
     @classmethod
     def _join(cls,obj1,obj2):
-        return obj1.get_text().rstrip()+" "+obj2.get_text().rstrip()
+        return obj1.get_text().strip()+" "+obj2.get_text().strip()
 
     def merge(self,obj):#直接将第二个文本添加在第一个文本后
         self.text=text_box._join(self,obj)
@@ -177,6 +177,7 @@ class ReferencesReader:
             self._get_body()
             self._find_references()
             self._split_references()
+            self._beautify_references()
 
 
     def __len__(self):
@@ -363,3 +364,5 @@ class ReferencesReader:
             tmp=[]
             if references_end==True:
                 break
+    def _beautify_references(self):
+        self._references_list=[re.match(r"((\[.*?\])|([0-9]*\s*\.))?(.*)",x).group(4).strip() for x in self._references_list]
