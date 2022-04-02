@@ -294,7 +294,8 @@ class ReferencesReader:
             if n==0:
                 return 0
             tmp=sum_x/n
-            return sum_x2/n-tmp*tmp
+            s2=sum_x2/n-tmp*tmp
+            return s2 if abs(s2)>1e-9 else 0
 
         def cal_min_s2(l):#将有序列表一分为二使得两部分的方差和最小
             sum_x,sum_x2=0,0
@@ -312,13 +313,9 @@ class ReferencesReader:
                 y_s2=cal_s2(sum_y,sum_y2,len(l)-j-1)
                 if x_s2+y_s2<min_x_s2+min_y_s2:
                     min_sum_x,min_x_s2,min_sum_y,min_y_s2,split_pos=sum_x,x_s2,sum_y,y_s2,j+1
-            if abs(min_x_s2)<1e-9:#防止因为精度损失导致s2小于0造成不能开根
-                min_x_s2=0
-            if abs(min_y_s2)<1e-9:
-                min_y_s2=0
-            return split_pos,min_sum_x/split_pos,math.sqrt(min_x_s2),min_sum_y/(len(l)-split_pos),math.sqrt(min_y_s2)#返回分割位置，x部分的平均数，x部分的标准差，y部分的平均数，y部分的表准差
+            return split_pos,min_sum_x/split_pos if split_pos>0 else 0,math.sqrt(min_x_s2),min_sum_y/(len(l)-split_pos) if len(l)-split_pos>0 else 0,math.sqrt(min_y_s2)#返回分割位置，x部分的平均数，x部分的标准差，y部分的平均数，y部分的表准差
 
-            
+        sum_line_space,sum_line_space2,num_line_space=0,0,0#统计所有的行间距，用于判断references是否达到结尾
         tmp=[]
         references_end=False
         for i,line in enumerate(line_list):
@@ -330,23 +327,33 @@ class ReferencesReader:
                         break
                     line_space.append(line_list[j-1][0].y0-line_list[j][0].y1)
                 if len(line_space)<6:#样本太小，不具有统计学意义
-                    line_space_prize=-1#不对行间隔的差异给予奖励
+                    line_space_prize=False#不对行间隔的差异给予奖励
                 else:
                     line_space=sorted(line_space)[1:len(line_space)-1]#剔除最大和最小的两个数
                     split_pos,avg_x,sig_x,avg_y,sig_y=cal_min_s2(line_space)#将列表一分为二，x表示同一个reference之间两行的间隔，y表示两个reference之间的间隔（估计）
-                    line_space_prize=-1 if min(sig_x,sig_y)<=1e9 else 0 if avg_y-avg_x<3*max(sig_x,sig_y) else 1
+                    line_space_prize=False if split_pos<=1 or split_pos>=len(line_space)-1 or avg_y-avg_x<3*max(sig_x,sig_y) else True
     
             value=0
             if(i!=len(line_list)-1):#如果是全文最后一行就没有讨论的必要了
                 if i!=0 and line_list[i-1][1]==line[1]:#如果本行和上一行在同一页同一列
                     value+=3 if line_list[i-1][0].x1>line[0].x1 and int(len(line_list[i-1][0].get_text())*(line_list[i-1][0].x1-line[0].x1)/(line_list[i-1][0].x1-line_list[i-1][0].x0))>2 else 0#如果本行的右端在上面那行的右端的左边，给予奖励
                 if line_list[i+1][1]==line[1]:#如果本行和下一行在同一页同一列
-                    if line_space_prize==1:
-                        value+=5 if abs(line[0].y0-line_list[i+1][0].y1-avg_x)/sig_x>abs(line[0].y0-line_list[i+1][0].y1-avg_y)/sig_y else -5#如果它跟下一行的间隔更加接近avg_y（两个reference之间的间隔），则给予奖励，否则给予惩罚
+                    if line_space_prize==True:
+                        #如果它跟下一行的间隔更加接近avg_y（两个reference之间的间隔），则给予奖励，否则给予惩罚，本来为abs(line[0].y0-line_list[i+1][0].y1-avg_x)/sig_x>abs(line[0].y0-line_list[i+1][0].y1-avg_y)/sig_y通过移项防止除以零
+                        value+=5 if abs(line[0].y0-line_list[i+1][0].y1-avg_x)*sig_y>abs(line[0].y0-line_list[i+1][0].y1-avg_y)*sig_x else -5
                     value+= 3 if line_list[i+1][0].x1>line[0].x1 and int(len(line_list[i+1][0].get_text())*(line_list[i+1][0].x1-line[0].x1)/(line_list[i+1][0].x1-line_list[i+1][0].x0))>2 else 0#如果本行的右端在下面那行的右端的左边，给予奖励
                     value-=10 if line_list[i+1][1]==tmp[0][1] and int(len(tmp[0][0].get_text())*(line_list[i+1][0].x0-tmp[0][0].x0)/(tmp[0][0].x1-tmp[0][0].x0))>0 else 0#如果下一行与本reference的第一行在同一列(即没有发生错位)，且如果下一行的左端与上一条reference的左端不同，给予惩罚
-                    if line_space_prize>=0 and abs(line[0].y0-line_list[i+1][0].y1-avg_y)/sig_y>=5:
-                        references_end=True
+                    if num_line_space>=6:
+                        avg_line_space=sum_line_space/num_line_space
+                        sig_line_space=math.sqrt(cal_s2(sum_line_space,sum_line_space2,num_line_space))
+                        if line[0].y0-line_list[i+1][0].y1>2*(avg_line_space+3*sig_line_space):#如果下一部分过长，认为reference结束，论文进入下一个部分
+                            references_end=True
+                    sum_line_space+=line[0].y0-line_list[i+1][0].y1
+                    sum_line_space2+=(line[0].y0-line_list[i+1][0].y1)**2
+                    num_line_space+=1
+                elif num_line_space>=6 and line[0].y0-self.min_y>5*(avg_line_space+3*sig_line_space):
+                    references_end=True
+
                 value+=period_prize(line[0].get_text())
                 if value<=0 and references_end==False:
                     continue
