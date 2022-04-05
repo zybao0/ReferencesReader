@@ -17,7 +17,7 @@ def cal_s2(sum_x,sum_x2,n):
         return 0
     tmp=sum_x/n
     s2=sum_x2/n-tmp*tmp
-    return s2 if abs(s2)>1e-9 else 0
+    return s2 if abs(s2)>1e-12 else 0
 
 def cal_min_s2(l):#将有序列表一分为二使得两部分的方差和最小
     sum_x,sum_x2=0,0

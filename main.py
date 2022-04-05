@@ -1,5 +1,12 @@
 from ReferencesReader import ReferencesReader
+import crawler
+import time
 
-reader = ReferencesReader(r'./PDF_data','[0054] [Eurographics 2004] Spherical Harmonic Gradients for Mid-Range Illumination.pdf')
-print(reader.min_y,reader.max_y)
+reader = ReferencesReader(r'./PDF_data','Liu_Invertible_Denoising_Network_A_Light_Solution_for_Real_Noise_Removal_CVPR_2021_paper.pdf')
 print(reader)
+# for x in reader:
+#     print(x)
+#     bib=crawler.get_bib_from_baiduxueshu(x)
+#     print(bib)
+#     time.sleep(3)
+#     print()

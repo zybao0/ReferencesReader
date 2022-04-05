@@ -17,24 +17,25 @@ from collections import defaultdict
 
 
 class ReferencesReader:
-    _pdf_pages=[]#储存所有页面的box
-    _references_page=[]#储存references页面的box
+    def __init__(self,PDF_file):
+        self._pdf_pages=[]#储存所有页面的box
+        self._references_page=[]#储存references页面的box
 
-    #由于论文的特点，正文部分的box再竖直方向[x轴坐标]（几乎）是对齐的，
-    #使用字典统计左边界为x0，右边界为x1的box的总面积有多大，
-    #若该面积占所有box总面积的大部分，则认为左边界为x0，右边界为x1的box为正文box
-    #取所有正文box的y值上界和y值下界得到正文部分的上界和下界
-    #若y值超过上界或下界的box认为属于页眉或页脚内容
-    _x_dict=defaultdict(float)#key:box的左右边界,value:box面积
-    _most_common_bound=[]#全文中最有可能出现的左右边界对  
-    tol_size=0    #box总面积
-    min_y=0xEAB0  #y值下界
-    max_y=-0xEAB0 #y值上界
+        #由于论文的特点，正文部分的box再竖直方向[x轴坐标]（几乎）是对齐的，
+        #使用字典统计左边界为x0，右边界为x1的box的总面积有多大，
+        #若该面积占所有box总面积的大部分，则认为左边界为x0，右边界为x1的box为正文box
+        #取所有正文box的y值上界和y值下界得到正文部分的上界和下界
+        #若y值超过上界或下界的box认为属于页眉或页脚内容
+        self._x_dict=defaultdict(float)#key:box的左右边界,value:box面积
+        self._most_common_bound=[]#全文中最有可能出现的左右边界对  
+        self.tol_size=0    #box总面积
+        self.min_y=0xEAB0  #y值下界
+        self.max_y=-0xEAB0 #y值上界
 
-    _references_list=[]#最终获得的references的列表
+        self._references_list=[]#最终获得的references的列表
 
-    def __init__(self,pdf_path,pdf_name):
-        self._extract_text(pdf_path,pdf_name)
+        
+        self._extract_text(PDF_file)
         self._get_body()
         self._find_references()
         self._merge_references()
@@ -50,12 +51,10 @@ class ReferencesReader:
     def __repr__(self):
         return "\n".join(["["+str(i)+"]: "+x for i,x in enumerate(self._references_list)])
 
-    def _extract_text(self,pdf_path,pdf_name):
-        os.chdir(pdf_path)
-        fp=open(pdf_name,'rb')
+    def _extract_text(self,PDF_file):
 
         #来创建一个pdf文档分析器
-        parser=PDFParser(fp)
+        parser=PDFParser(PDF_file)
         #创建一个PDF文档对象存储文档结构
         document=PDFDocument(parser)
         #连接分析器，与文档对象
@@ -200,20 +199,22 @@ class ReferencesReader:
                 if i!=0 and line_list[i-1][1]==line[1]:#如果本行和上一行在同一页同一列
                     value+=3 if line_list[i-1][0].x1>line[0].x1 and int(len(line_list[i-1][0].get_text())*(line_list[i-1][0].x1-line[0].x1)/(line_list[i-1][0].x1-line_list[i-1][0].x0))>2 else 0#如果本行的右端在上面那行的右端的左边，给予奖励
                 if line_list[i+1][1]==line[1]:#如果本行和下一行在同一页同一列
+                    print(line[0].get_text(),line[0].y0-line_list[i+1][0].y1)
                     if line_space_prize==True:
                         #如果它跟下一行的间隔更加接近avg_y（两个reference之间的间隔），则给予奖励，否则给予惩罚，本来为abs(line[0].y0-line_list[i+1][0].y1-avg_x)/sig_x>abs(line[0].y0-line_list[i+1][0].y1-avg_y)/sig_y通过移项防止除以零
                         value+=5 if abs(line[0].y0-line_list[i+1][0].y1-avg_x)*sig_y>abs(line[0].y0-line_list[i+1][0].y1-avg_y)*sig_x else -5
                     value+= 3 if line_list[i+1][0].x1>line[0].x1 and int(len(line_list[i+1][0].get_text())*(line_list[i+1][0].x1-line[0].x1)/(line_list[i+1][0].x1-line_list[i+1][0].x0))>2 else 0#如果本行的右端在下面那行的右端的左边，给予奖励
                     value-=10 if line_list[i+1][1]==tmp[0][1] and int(len(tmp[0][0].get_text())*(line_list[i+1][0].x0-tmp[0][0].x0)/(tmp[0][0].x1-tmp[0][0].x0))>0 else 0#如果下一行与本reference的第一行在同一列(即没有发生错位)，且如果下一行的左端与上一条reference的左端不同，给予惩罚
-                    if num_line_space>=6:
+                    if len(self._references_list)>=6:
                         avg_line_space=sum_line_space/num_line_space
                         sig_line_space=math.sqrt(cal_s2(sum_line_space,sum_line_space2,num_line_space))
-                        if line[0].y0-line_list[i+1][0].y1>2*(avg_line_space+3*sig_line_space):#如果下一部分过长，认为reference结束，论文进入下一个部分
+                        if sig_line_space>1e-6 and line[0].y0-line_list[i+1][0].y1>2*(abs(avg_line_space)+3*sig_line_space):#如果下一部分过长，认为reference结束，论文进入下一个部分
+                            print("-----",avg_line_space,sig_line_space)
                             references_end=True
                     sum_line_space+=line[0].y0-line_list[i+1][0].y1
                     sum_line_space2+=(line[0].y0-line_list[i+1][0].y1)**2
                     num_line_space+=1
-                elif num_line_space>=6 and line[0].y0-self.min_y>5*(avg_line_space+3*sig_line_space):
+                elif len(self._references_list)>=6 and sig_line_space>1e-6 and  line[0].y0-self.min_y>5*(abs(avg_line_space)+3*sig_line_space):
                     references_end=True
 
                 value+=period_prize(line[0].get_text())
