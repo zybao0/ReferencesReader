@@ -165,6 +165,8 @@ class ReferencesReader:
             
             for j,box in enumerate(page):
                 box.merge_lines()
+                if len(box)==1 and len(box[0].get_text())<5 and (box.x0,box.x1)not in self._most_common_bound:
+                    continue
                 if j>0 and page[j-1].x1<box.x0:#如果两个box发生了错位，认为另起了一列
                     column+=1
                 for line in box:
@@ -199,7 +201,6 @@ class ReferencesReader:
                 if i!=0 and line_list[i-1][1]==line[1]:#如果本行和上一行在同一页同一列
                     value+=3 if line_list[i-1][0].x1>line[0].x1 and int(len(line_list[i-1][0].get_text())*(line_list[i-1][0].x1-line[0].x1)/(line_list[i-1][0].x1-line_list[i-1][0].x0))>2 else 0#如果本行的右端在上面那行的右端的左边，给予奖励
                 if line_list[i+1][1]==line[1]:#如果本行和下一行在同一页同一列
-                    print(line[0].get_text(),line[0].y0-line_list[i+1][0].y1)
                     if line_space_prize==True:
                         #如果它跟下一行的间隔更加接近avg_y（两个reference之间的间隔），则给予奖励，否则给予惩罚，本来为abs(line[0].y0-line_list[i+1][0].y1-avg_x)/sig_x>abs(line[0].y0-line_list[i+1][0].y1-avg_y)/sig_y通过移项防止除以零
                         value+=5 if abs(line[0].y0-line_list[i+1][0].y1-avg_x)*sig_y>abs(line[0].y0-line_list[i+1][0].y1-avg_y)*sig_x else -5
@@ -209,7 +210,6 @@ class ReferencesReader:
                         avg_line_space=sum_line_space/num_line_space
                         sig_line_space=math.sqrt(cal_s2(sum_line_space,sum_line_space2,num_line_space))
                         if sig_line_space>1e-6 and line[0].y0-line_list[i+1][0].y1>2*(abs(avg_line_space)+3*sig_line_space):#如果下一部分过长，认为reference结束，论文进入下一个部分
-                            print("-----",avg_line_space,sig_line_space)
                             references_end=True
                     sum_line_space+=line[0].y0-line_list[i+1][0].y1
                     sum_line_space2+=(line[0].y0-line_list[i+1][0].y1)**2
