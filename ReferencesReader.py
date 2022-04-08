@@ -227,4 +227,6 @@ class ReferencesReader:
             if references_end==True:
                 break
     def _beautify_references(self):
-        self._references_list=[re.match(r"((\[.*?\])|([0-9]*\s*\.))?(.*)",x).group(4).strip() for x in self._references_list]
+        #use regular expression to remove Index of reference
+        #use set to distinct references
+        self._references_list=list(set([re.match(r"((\[.*?\])|([0-9]*\s*\.))?(.*)",x).group(4).strip() for x in self._references_list]))
