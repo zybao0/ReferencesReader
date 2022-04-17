@@ -6,9 +6,9 @@ module.exports = {
                 // 允许跨域
                 changeOrigin: true,
                 ws: true,
-                pathRewrite: {
-                    '^/api': ''
-                }
+                // pathRewrite: {
+                //     '^/api': ''
+                // }
             }
         }
     }

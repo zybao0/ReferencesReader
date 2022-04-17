@@ -1,3 +1,6 @@
 PDF_data/
 __pycache__/
 ReferencesReader.db
+templates/
+static/
+static
