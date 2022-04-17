@@ -43,6 +43,12 @@ def querybib():
 def index():
    return app.send_static_file('index.html')
 
+"""
+if the request is not js or css ect
+ignore the request and let it handle by VueRouter
+if VueRouter is in hash mode this method can be remove
+but in this project I use history mode
+"""
 @app.route('/<path:fallback>')
 def fallback(fallback):
     if fallback.startswith('css/') or fallback.startswith('js/') or fallback.startswith('img/') or fallback == 'favicon.ico':

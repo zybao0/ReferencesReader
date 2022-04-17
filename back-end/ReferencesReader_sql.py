@@ -1,5 +1,7 @@
 import sqlite3
 import base64
+#we store our analytical result and BiBTex in SQL
+#so we can avoid repeated analysis and crawler when meeting same queries 
 class ReferencesSQL:
     def __init__(self):
         self.con=sqlite3.connect("ReferencesReader.db")

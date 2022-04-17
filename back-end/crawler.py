@@ -2,6 +2,10 @@ import requests
 from urllib.parse import parse_qs,urlparse
 from bs4 import BeautifulSoup
 import re
+
+# search a reference in baiduxueshu
+# select the first paper form the result and get it's paper id
+# get the BiBTex through it's paper id
 def get_bib_from_baiduxueshu(reference):
     headers={
         "user-agent":"Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36"

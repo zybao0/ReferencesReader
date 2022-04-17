@@ -1,3 +1,6 @@
+# transform the box from pdfminer
+# so that I can secondary process the result
+
 class box_base:
     def __init__(self,x0,x1,y0,y1):
         self.set_size(x0,x1,y0,y1)
@@ -12,7 +15,7 @@ class box_base:
         self.x0,self.x1,self.y0,self.y1=x0,x1,y0,y1
         
     @classmethod
-    def y_nest(cls,obj1,obj2):#判断两个box在y方向是否形成嵌套关系
+    def y_nest(cls,obj1,obj2):
         return (obj1.y0+0.001>=obj2.y0 and obj1.y1-0.001<=obj2.y1) or (obj1.y0-0.001<=obj2.y0 and obj1.y1+0.001>=obj2.y1)
 
     @classmethod
@@ -34,7 +37,7 @@ class text_box(box_base):
     def _join(cls,obj1,obj2):
         return obj1.get_text().strip()+" "+obj2.get_text().strip()
 
-    def merge(self,obj):#直接将第二个文本添加在第一个文本后
+    def merge(self,obj):
         self.text=text_box._join(self,obj)
         box_base.merge(self,obj)
 
@@ -59,8 +62,11 @@ class line_box(box_base):
     def __getitem__(self,index):
         return self._lines[index]
 
+    #if box A is nested by box B in y axis
+    #and each line in box A and box B is aligned
+    #then we think that box A and box B can be merged in to a larger line box 
     @classmethod
-    def mergeable(cls,obj1,obj2):#判断两个box是否可以合并（是否是行在高度方向上重叠）
+    def mergeable(cls,obj1,obj2):
         if len(obj1)>len(obj2):
             obj1,obj2=obj2,obj1
         if len(obj1)==0:
@@ -79,21 +85,24 @@ class line_box(box_base):
                 return False
         return True
 
-    def merge(self,obj):#将两个box合并
+    def merge(self,obj):
         self._lines+=[x for x in obj]
         box_base.merge(self,obj)
 
-    def sort(self):#对行按照y1从大到小排序（list里靠前的在pdf的上方（y1值较大））
+    def sort(self):
         self._lines.sort(key=lambda x:x.y1,reverse=True)
 
-    def merge_lines(self):#pdfminer 有时会把空格当作换行，在这里修正,把一个box内的相同高度的行合并
+    #sometimes two lines in a line box is actually one line in the pdf
+    #(this is cause by the faulty analysis of pdfminer or after we merge to line boxes)
+    #so we have to amend it by merging lines which have same y coordinate into one line
+    def merge_lines(self):
         self.sort()
         tmp=[]
         merged_lines=[]
         for i,x in enumerate(self._lines):
             tmp.append(x)
-            if i==len(self._lines)-1 or not text_box.mergeable(tmp[0],self._lines[i+1]):
-                tmp.sort(key=lambda x:x.x0)
+            if i==len(self._lines)-1 or not text_box.mergeable(tmp[0],self._lines[i+1]):#if the next line in the box is not mergeable with current line we should merge all the line in tmp and empty tmp
+                tmp.sort(key=lambda x:x.x0)#the text with smaller x coordinate should be put in the front of a line
                 for i in range(1,len(tmp)):
                     tmp[0].merge(tmp[i])
                 merged_lines.append(tmp[0])
