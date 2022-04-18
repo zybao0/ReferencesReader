@@ -137,7 +137,7 @@ class ReferencesReader:
                     t1=self._x_dict[(int(x.x0),int(x.x1))]
                     t2=self._x_dict[(int(y.x0),int(y.x1))]
                     t3=self._x_dict[(int(min(x.x0,y.x0)),int(max(x.x1,y.x1)))]
-                    if max(t1,t2)<t3 and line_box.mergeable(y,x)
+                    if max(t1,t2)<t3 and line_box.mergeable(y,x):
                         y.merge(x)
                         flag=True
                         break
